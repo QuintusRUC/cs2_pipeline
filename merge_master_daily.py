@@ -3,7 +3,7 @@ sys.stdout.reconfigure(encoding="utf-8")
 
 import csv
 
-# ✅ Update these to your 2-year window files
+#Update these to your 2-year window files
 MARKET_FILE = "market_daily_2023-09-01_to_2025-09-01.csv"
 FEATURES_FILE = "item_features.csv"
 OUTPUT_FILE = "master_daily_2023-09-01_to_2025-09-01.csv"

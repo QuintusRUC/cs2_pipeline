@@ -23,4 +23,6 @@ if __name__ == "__main__":
     run("item_features.py")
     run("merge_master_daily.py")
 
-    print("\n✅ Done! Your final file is: master_daily_30d.csv")
+    print("\n Finished. The final file is: master_daily_30d.csv")
+
+

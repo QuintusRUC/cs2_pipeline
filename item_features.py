@@ -88,7 +88,7 @@ def fetch_search_snapshot(session: requests.Session, hash_name: str):
 
         if r.status_code == 429:
             sleep_s = wait + (attempt * 0.3)
-            print(f"  ⚠️  429 rate limit. Sleeping {sleep_s:.1f}s (attempt {attempt}/5)")
+            print(f"429 rate limit. Sleeping {sleep_s:.1f}s (attempt {attempt}/5)")
             time.sleep(sleep_s)
             wait *= 2
             continue

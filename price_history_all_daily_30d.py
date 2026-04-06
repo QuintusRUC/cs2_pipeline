@@ -73,7 +73,7 @@ def get_pricehistory_json(session: requests.Session, market_hash_name: str, max_
 
         if r.status_code in (429, 400):
             sleep_s = wait + random.uniform(0, 1.5)
-            print(f"  ⚠️  HTTP {r.status_code} for '{market_hash_name}'. Sleeping {sleep_s:.1f}s (attempt {attempt}/{max_retries})")
+            print(f"HTTP {r.status_code} for '{market_hash_name}'. Sleeping {sleep_s:.1f}s (attempt {attempt}/{max_retries})")
             time.sleep(sleep_s)
             wait *= 2
             continue
@@ -88,7 +88,7 @@ def get_pricehistory_json(session: requests.Session, market_hash_name: str, max_
 
         if not data.get("success"):
             sleep_s = wait + random.uniform(0, 1.0)
-            print(f"  ⚠️  success=False. Sleeping {sleep_s:.1f}s (attempt {attempt}/{max_retries})")
+            print(f"success=False. Sleeping {sleep_s:.1f}s (attempt {attempt}/{max_retries})")
             time.sleep(sleep_s)
             wait *= 2
             continue
@@ -148,7 +148,7 @@ session = make_steam_session()
 total_rows_written = 0
 errors = 0
 
-# ✅ APPEND MODE + only write header once
+# APPEND MODE + only write header once
 file_exists = os.path.exists(OUTPUT_FILE) and os.path.getsize(OUTPUT_FILE) > 0
 
 with open(OUTPUT_FILE, "a", newline="", encoding="utf-8") as f_out:

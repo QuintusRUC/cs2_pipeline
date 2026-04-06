@@ -12,7 +12,7 @@ HEADERS = {"User-Agent": "Mozilla/5.0"}
 APPID = 730
 OUTPUT_FILE = "skins.csv"
 
-# ✅ Your 20 base skins (replace with your current list if different)
+# Base skins
 base_skins = [
     "AK-47 | Redline",
     "AK-47 | Asiimov",
@@ -94,22 +94,22 @@ def steam_search_json(session: requests.Session, query: str, count: int = 50, ma
 
         if r.status_code == 429:
             sleep_s = wait + random.uniform(0, 1.0)
-            print(f"⚠️  429 rate limit for '{query}'. Sleeping {sleep_s:.1f}s (attempt {attempt}/{max_retries})")
+            print(f"429 rate limit for '{query}'. Sleeping {sleep_s:.1f}s (attempt {attempt}/{max_retries})")
             time.sleep(sleep_s)
             wait *= 2
             continue
 
         if r.status_code != 200:
-            print(f"⚠️  Bad status {r.status_code} for '{query}'. Skipping.")
+            print(f"Bad status {r.status_code} for '{query}'. Skipping.")
             return None
 
         try:
             return r.json()
         except Exception:
-            print(f"⚠️  Response not JSON for '{query}'. Skipping.")
+            print(f"Response not JSON for '{query}'. Skipping.")
             return None
 
-    print(f"❌ Gave up after retries for '{query}'.")
+    print(f"Gave up after retries for '{query}'.")
     return None
 
 def main():
