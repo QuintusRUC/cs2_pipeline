@@ -1,0 +1,6 @@
+Feature,Count,% Miss.,Card.,Mode,Mode Freq.,Mode %,2nd Mode,2nd Mode Freq.,2nd Mode %
+weapon,119926,0.0,15,M4A4,13427,11.2,Desert Eagle,13205,11.01
+wear,119926,0.0,5,Field-Tested,30636,25.55,Battle-Scarred,25076,20.91
+rarity,81536,32.01,2,Covert,49082,40.93,Classified,32454,27.06
+is_stattrak,119926,0.0,2,False,69090,57.61,True,50836,42.39
+currency,119926,0.0,1,3,119926,100.0,,0,0.0
