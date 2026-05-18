@@ -1,0 +1,11 @@
+model,split,MAE,RMSE,R2,n
+baseline_zero_return,val,0.066582,0.110727,-0.000832,13592
+baseline_zero_return,test,0.071969,0.10842,-0.001505,12284
+baseline_lag1_return,val,0.086095,0.14492,-0.714394,13592
+baseline_lag1_return,test,0.090043,0.137758,-0.616829,12284
+baseline_sum7_return,val,0.101614,0.163353,-1.178255,13592
+baseline_sum7_return,test,0.108565,0.158761,-1.147424,12284
+ridge,val,0.066406,0.110592,0.001619,13592
+ridge,test,0.071777,0.108301,0.000697,12284
+random_forest,val,0.067153,0.11157,-0.016134,13592
+random_forest,test,0.07229,0.108677,-0.006249,12284
