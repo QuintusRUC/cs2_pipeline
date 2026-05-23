@@ -10,6 +10,7 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.linear_model import Ridge
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
+
 # CONFIG
 
 FILE = r"C:\Users\nikol\OneDrive\Skrivebord\cs2\cs2_pipeline\data_exploration\model_ready_clean_final.csv"
@@ -21,6 +22,18 @@ TEST_END  = "2025-09-01"
 HORIZON_DAYS = 1
 SHAP_SAMPLE_SIZE = 3000
 RANDOM_STATE = 42
+
+
+# OUTPUT FILES
+# These are treated as the final one-day SHAP outputs.
+# The model includes price_deviation_ma7, but filenames stay clean.
+
+RESULTS_OUT = "shap_ridge_1d_model_results.csv"
+SHAP_IMPORTANCE_OUT = "shap_ridge_1d_feature_importance.csv"
+COEFFICIENTS_OUT = "ridge_1d_coefficients.csv"
+SHAP_BAR_OUT = "shap_ridge_1d_top20_bar.png"
+SHAP_SUMMARY_OUT = "shap_ridge_1d_summary.png"
+
 
 # HELPER FUNCTIONS
 
@@ -38,6 +51,7 @@ def report(name, split, y_true, y_pred):
         "n": len(y_true),
     }
 
+
 # LOAD DATA
 
 df = pd.read_csv(FILE)
@@ -52,6 +66,26 @@ df = df[df["median_price"] > 0]
 df = df[df["volume"] >= 0]
 
 df = df.sort_values(["hash_name", "date"]).copy()
+
+
+# CONVERT is_stattrak TO 0/1 NUMERIC BOOLEAN FEATURE
+
+if "is_stattrak" in df.columns:
+    df["is_stattrak"] = (
+        df["is_stattrak"]
+        .astype(str)
+        .str.strip()
+        .str.lower()
+        .map({
+            "true": 1,
+            "false": 0,
+            "1": 1,
+            "0": 0,
+            "yes": 1,
+            "no": 0
+        })
+    )
+
 
 # TARGET CONSTRUCTION: EXACT 1 CALENDAR DAY AHEAD
 
@@ -81,6 +115,7 @@ df = df[df["target_gap_days"] == HORIZON_DAYS].copy()
 
 df["target_logret_h"] = np.log(df["price_h"]) - np.log(df["median_price"])
 
+
 # FEATURE ENGINEERING: PAST-ONLY FEATURES
 
 df["logret_lag1"] = df.groupby("hash_name")["logret"].shift(1)
@@ -99,6 +134,29 @@ df["vol_ma7"] = (
       .transform(lambda s: s.shift(1).rolling(7).mean())
 )
 
+
+# PRICE DEVIATION FEATURE
+# This measures how far yesterday's log price was above or below
+# its previous 7-day average.
+# It is past-only because both price_log_lag1 and price_log_ma7 use shift(1).
+
+df["price_log"] = np.log(df["median_price"])
+
+df["price_log_lag1"] = (
+    df.groupby("hash_name")["price_log"]
+      .shift(1)
+)
+
+df["price_log_ma7"] = (
+    df.groupby("hash_name")["price_log"]
+      .transform(lambda s: s.shift(1).rolling(7).mean())
+)
+
+df["price_deviation_ma7"] = df["price_log_lag1"] - df["price_log_ma7"]
+
+
+# REQUIRED COLUMNS
+
 needed = [
     "price_h",
     "future_date",
@@ -109,10 +167,17 @@ needed = [
     "vol_lag1",
     "vol_lag2",
     "logret_ma7",
-    "vol_ma7"
+    "vol_ma7",
+    "price_log_lag1",
+    "price_log_ma7",
+    "price_deviation_ma7",
 ]
 
+if "is_stattrak" in df.columns:
+    needed.append("is_stattrak")
+
 df = df.dropna(subset=needed).copy()
+
 
 # SANITY CHECKS
 
@@ -133,6 +198,13 @@ print(df[needed].isna().sum())
 print("\nTarget distribution:")
 print(df["target_logret_h"].describe())
 
+print("\nPrice deviation distribution:")
+print(df["price_deviation_ma7"].describe())
+
+if "is_stattrak" in df.columns:
+    print("\nis_stattrak value counts:")
+    print(df["is_stattrak"].value_counts(dropna=False).sort_index())
+
 sample_skin = df["hash_name"].iloc[0]
 
 debug_cols = [
@@ -142,15 +214,23 @@ debug_cols = [
     "target_gap_days",
     "median_price",
     "price_h",
+    "price_log",
+    "price_log_lag1",
+    "price_log_ma7",
+    "price_deviation_ma7",
     "logret",
     "logret_lag1",
     "logret_lag2",
     "logret_ma7",
-    "target_logret_h"
+    "target_logret_h",
 ]
+
+if "is_stattrak" in df.columns:
+    debug_cols.append("is_stattrak")
 
 print("\nAlignment check for one skin:")
 print(df[df["hash_name"] == sample_skin][debug_cols].head(12))
+
 
 # TIME SPLIT
 
@@ -174,6 +254,7 @@ print("Train:", train["date"].min(), "->", train["date"].max())
 print("Val:  ", val["date"].min(), "->", val["date"].max())
 print("Test: ", test["date"].min(), "->", test["date"].max())
 
+
 # PREPARE MATRICES
 
 num_cols = [
@@ -182,11 +263,17 @@ num_cols = [
     "vol_lag1",
     "vol_lag2",
     "logret_ma7",
-    "vol_ma7"
+    "vol_ma7",
+    "price_deviation_ma7",
 ]
 
+# is_stattrak is boolean, so it is added as a numeric 0/1 feature
+if "is_stattrak" in df.columns:
+    num_cols.append("is_stattrak")
+
+# Other categorical variables are still one-hot encoded
 cat_cols = [
-    c for c in ["weapon", "wear", "rarity", "is_stattrak"]
+    c for c in ["weapon", "wear", "rarity"]
     if c in df.columns
 ]
 
@@ -199,12 +286,24 @@ y_val = val["target_logret_h"]
 X_test = test[num_cols + cat_cols]
 y_test = test["target_logret_h"]
 
-preprocess = ColumnTransformer(
-    transformers=[
-        ("cat", OneHotEncoder(handle_unknown="ignore", sparse_output=False), cat_cols),
-        ("num", StandardScaler(), num_cols),
-    ]
+
+# PREPROCESSOR
+
+transformers = []
+
+if len(cat_cols) > 0:
+    transformers.append(
+        ("cat", OneHotEncoder(handle_unknown="ignore", sparse_output=False), cat_cols)
+    )
+
+transformers.append(
+    ("num", StandardScaler(), num_cols)
 )
+
+preprocess = ColumnTransformer(
+    transformers=transformers
+)
+
 
 # RIDGE REGRESSION
 
@@ -215,11 +314,13 @@ ridge = Pipeline(steps=[
 
 ridge.fit(X_train, y_train)
 
+train_pred = ridge.predict(X_train)
 val_pred = ridge.predict(X_val)
 test_pred = ridge.predict(X_test)
 
 results = []
 
+results.append(report("ridge", "train", y_train, train_pred))
 results.append(report("ridge", "val", y_val, val_pred))
 results.append(report("ridge", "test", y_test, test_pred))
 
@@ -234,7 +335,8 @@ print("RIDGE PERFORMANCE")
 print("============================================================")
 print(results_df)
 
-results_df.to_csv("shap_ridge_1d_model_results.csv", index=False)
+results_df.to_csv(RESULTS_OUT, index=False)
+
 
 # SHAP DATA PREPARATION
 
@@ -261,6 +363,7 @@ if len(X_test_transformed) > SHAP_SAMPLE_SIZE:
 else:
     X_test_sample = X_test_transformed.copy()
 
+
 # SHAP EXPLANATION
 
 ridge_model = ridge.named_steps["model"]
@@ -284,7 +387,8 @@ print("SHAP FEATURE IMPORTANCE")
 print("============================================================")
 print(shap_importance.head(30))
 
-shap_importance.to_csv("shap_ridge_1d_feature_importance.csv", index=False)
+shap_importance.to_csv(SHAP_IMPORTANCE_OUT, index=False)
+
 
 # RIDGE COEFFICIENTS
 
@@ -293,7 +397,13 @@ coef_df = pd.DataFrame({
     "coefficient": ridge_model.coef_
 }).sort_values("coefficient", ascending=False)
 
-coef_df.to_csv("ridge_1d_coefficients.csv", index=False)
+print("\n============================================================")
+print("RIDGE COEFFICIENTS")
+print("============================================================")
+print(coef_df.head(30))
+
+coef_df.to_csv(COEFFICIENTS_OUT, index=False)
+
 
 # SHAP BAR PLOT
 
@@ -306,8 +416,9 @@ plt.xlabel("Mean absolute SHAP value")
 plt.ylabel("Feature")
 plt.title("Top SHAP features - Ridge one-day model")
 plt.tight_layout()
-plt.savefig("shap_ridge_1d_top20_bar.png", dpi=300)
+plt.savefig(SHAP_BAR_OUT, dpi=300)
 plt.close()
+
 
 # SHAP SUMMARY PLOT
 
@@ -322,14 +433,15 @@ shap.summary_plot(
 )
 
 plt.tight_layout()
-plt.savefig("shap_ridge_1d_summary.png", dpi=300, bbox_inches="tight")
+plt.savefig(SHAP_SUMMARY_OUT, dpi=300, bbox_inches="tight")
 plt.close()
+
 
 print("\n============================================================")
 print("FILES SAVED")
 print("============================================================")
-print("shap_ridge_1d_model_results.csv")
-print("shap_ridge_1d_feature_importance.csv")
-print("ridge_1d_coefficients.csv")
-print("shap_ridge_1d_top20_bar.png")
-print("shap_ridge_1d_summary.png")
+print(RESULTS_OUT)
+print(SHAP_IMPORTANCE_OUT)
+print(COEFFICIENTS_OUT)
+print(SHAP_BAR_OUT)
+print(SHAP_SUMMARY_OUT)

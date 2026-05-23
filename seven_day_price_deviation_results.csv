@@ -1,0 +1,16 @@
+model,split,MAE,RMSE,R2,n
+baseline_zero_return,train,0.060562,0.090003,-0.002269,69000
+baseline_zero_return,val,0.05642,0.091076,-0.000361,10359
+baseline_zero_return,test,0.063713,0.094825,-0.003718,9358
+baseline_lag1_return,train,0.073794,0.112685,-0.571081,69000
+baseline_lag1_return,val,0.071021,0.113734,-0.560018,10359
+baseline_lag1_return,test,0.077626,0.116054,-0.503434,9358
+baseline_sum7_return,train,0.09055,0.131689,-1.145681,69000
+baseline_sum7_return,val,0.086802,0.129572,-1.024767,10359
+baseline_sum7_return,test,0.097454,0.141331,-1.229665,9358
+ridge_price_deviation,train,0.060205,0.089594,0.006825,69000
+ridge_price_deviation,val,0.056319,0.091205,-0.003207,10359
+ridge_price_deviation,test,0.063425,0.094514,0.002863,9358
+random_forest_price_deviation,train,0.045845,0.071954,0.359419,69000
+random_forest_price_deviation,val,0.056649,0.091308,-0.005462,10359
+random_forest_price_deviation,test,0.063908,0.094857,-0.004397,9358

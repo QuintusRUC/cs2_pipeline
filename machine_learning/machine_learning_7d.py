@@ -1,6 +1,9 @@
 # Importing relevant modules
 import pandas as pd
 import numpy as np
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
@@ -9,9 +12,10 @@ from sklearn.linear_model import Ridge
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
+
 # CONFIG
 
-FILE = r"C:\Users\nikol\Desktop\cs2_pipeline\data_exploration\model_ready_clean_final.csv"
+FILE = r"C:\Users\nikol\OneDrive\Skrivebord\cs2\cs2_pipeline\data_exploration\model_ready_clean_final.csv"
 
 TRAIN_END = "2025-03-01"
 VAL_END   = "2025-06-01"
@@ -20,7 +24,9 @@ TEST_END  = "2025-09-01"
 RUN_RF = True
 HORIZON_DAYS = 7
 
+
 # HELPER FUNCTIONS
+
 def rmse(y_true, y_pred):
     return np.sqrt(mean_squared_error(y_true, y_pred))
 
@@ -35,6 +41,7 @@ def report(name, split, y_true, y_pred):
         "n": len(y_true),
     }
 
+
 # LOAD DATA
 
 df = pd.read_csv(FILE)
@@ -45,21 +52,14 @@ df["volume"] = pd.to_numeric(df["volume"], errors="coerce")
 
 df = df.dropna(subset=["hash_name", "date", "median_price", "volume"])
 
-# Safety filters
 df = df[df["median_price"] > 0]
 df = df[df["volume"] >= 0]
 
 df = df.sort_values(["hash_name", "date"]).copy()
 
-# TARGET CONSTRUCTION: EXACT 7 CALENDAR DAYS AHEAD
-# Daily log return:
-# logret_t = log(price_t) - log(price_t-1)
-df["logret"] = (
-    df.groupby("hash_name")["median_price"]
-      .transform(lambda s: np.log(s).diff())
-)
 
-# Future observation within each skin
+# TARGET CONSTRUCTION: EXACT 7 CALENDAR DAYS AHEAD
+
 df["future_date"] = (
     df.groupby("hash_name")["date"]
       .shift(-HORIZON_DAYS)
@@ -70,27 +70,28 @@ df["price_h"] = (
       .shift(-HORIZON_DAYS)
 )
 
-# Calendar gap between current row and future target row
 df["target_gap_days"] = (df["future_date"] - df["date"]).dt.days
 
 print("\n============================================================")
 print("TARGET GAP BEFORE EXACT-HORIZON FILTER")
 print("============================================================")
-print(df["target_gap_days"].value_counts(dropna=False).sort_index().head(30))
+print(df["target_gap_days"].value_counts(dropna=False).sort_index().head(20))
 
-# Keep only rows where the future observation is exactly +7 calendar days
 df = df[df["target_gap_days"] == HORIZON_DAYS].copy()
 
-# Target:
-# target_logret_h = log(price_t+7) - log(price_t)
 df["target_logret_h"] = np.log(df["price_h"]) - np.log(df["median_price"])
 
+
 # FEATURE ENGINEERING: PAST-ONLY FEATURES
-# Lagged returns
+
+df["logret"] = (
+    df.groupby("hash_name")["median_price"]
+      .transform(lambda s: np.log(s).diff())
+)
+
 df["logret_lag1"] = df.groupby("hash_name")["logret"].shift(1)
 df["logret_lag2"] = df.groupby("hash_name")["logret"].shift(2)
 
-# Past 7-day cumulative return and volatility
 df["logret_sum7"] = (
     df.groupby("hash_name")["logret"]
       .transform(lambda s: s.shift(1).rolling(7).sum())
@@ -101,11 +102,9 @@ df["logret_std7"] = (
       .transform(lambda s: s.shift(1).rolling(7).std())
 )
 
-# Lagged volume
 df["vol_lag1"] = df.groupby("hash_name")["volume"].shift(1)
 df["vol_lag2"] = df.groupby("hash_name")["volume"].shift(2)
 
-# Past 7-day volume mean and standard deviation
 df["vol_ma7"] = (
     df.groupby("hash_name")["volume"]
       .transform(lambda s: s.shift(1).rolling(7).mean())
@@ -116,15 +115,14 @@ df["vol_std7"] = (
       .transform(lambda s: s.shift(1).rolling(7).std())
 )
 
-# Volume surprise
-df["vol_z7"] = (df["vol_lag1"] - df["vol_ma7"]) / (df["vol_std7"] + 1e-9)
+df["vol_z7"] = (
+    (df["vol_lag1"] - df["vol_ma7"]) / (df["vol_std7"] + 1e-9)
+)
 
 
-needed = [
-    "price_h",
-    "future_date",
-    "target_logret_h",
-    "target_gap_days",
+# DROP MISSING VALUES
+
+num_cols = [
     "logret_lag1",
     "logret_lag2",
     "logret_sum7",
@@ -133,10 +131,23 @@ needed = [
     "vol_lag2",
     "vol_ma7",
     "vol_std7",
-    "vol_z7"
+    "vol_z7",
 ]
 
+cat_cols = [
+    c for c in ["weapon", "wear", "rarity", "is_stattrak"]
+    if c in df.columns
+]
+
+needed = [
+    "price_h",
+    "future_date",
+    "target_logret_h",
+    "target_gap_days",
+] + num_cols
+
 df = df.dropna(subset=needed).copy()
+
 
 # SANITY CHECKS
 
@@ -166,19 +177,17 @@ debug_cols = [
     "target_gap_days",
     "median_price",
     "price_h",
+    "target_logret_h",
     "logret",
     "logret_lag1",
     "logret_lag2",
     "logret_sum7",
     "logret_std7",
-    "vol_lag1",
-    "vol_ma7",
-    "vol_z7",
-    "target_logret_h"
 ]
 
 print("\nAlignment check for one skin:")
-print(df[df["hash_name"] == sample_skin][debug_cols].head(15))
+print(df[df["hash_name"] == sample_skin][debug_cols].head(12))
+
 
 # TIME SPLIT
 
@@ -202,9 +211,25 @@ print("Train:", train["date"].min(), "->", train["date"].max())
 print("Val:  ", val["date"].min(), "->", val["date"].max())
 print("Test: ", test["date"].min(), "->", test["date"].max())
 
-# PREPARE MATRICES
 
-num_cols = [
+# TARGET DISTRIBUTION PER SPLIT
+
+target_summary = pd.DataFrame({
+    "train": train["target_logret_h"].describe(),
+    "val": val["target_logret_h"].describe(),
+    "test": test["target_logret_h"].describe(),
+})
+
+print("\n============================================================")
+print("TARGET DISTRIBUTION PER SPLIT")
+print("============================================================")
+print(target_summary)
+
+
+# CORRELATION MATRIX: SEVEN-DAY MODEL
+
+corr_cols = [
+    "target_logret_h",
     "logret_lag1",
     "logret_lag2",
     "logret_sum7",
@@ -213,13 +238,68 @@ num_cols = [
     "vol_lag2",
     "vol_ma7",
     "vol_std7",
-    "vol_z7"
+    "vol_z7",
 ]
 
-cat_cols = [
-    c for c in ["weapon", "wear", "rarity", "is_stattrak"]
-    if c in df.columns
-]
+corr_data = train[corr_cols].copy()
+corr_matrix = corr_data.corr(numeric_only=True)
+
+print("\n============================================================")
+print("CORRELATION MATRIX: SEVEN-DAY MODEL")
+print("============================================================")
+print(corr_matrix)
+
+plt.figure(figsize=(12, 9))
+plt.imshow(corr_matrix, aspect="auto", vmin=-1, vmax=1)
+plt.colorbar(label="Correlation")
+
+plt.xticks(
+    ticks=np.arange(len(corr_cols)),
+    labels=corr_cols,
+    rotation=45,
+    ha="right"
+)
+
+plt.yticks(
+    ticks=np.arange(len(corr_cols)),
+    labels=corr_cols
+)
+
+for i in range(len(corr_cols)):
+    for j in range(len(corr_cols)):
+        plt.text(
+            j,
+            i,
+            f"{corr_matrix.iloc[i, j]:.2f}",
+            ha="center",
+            va="center",
+            fontsize=8
+        )
+
+plt.title("Correlation matrix - seven-day model")
+plt.tight_layout()
+plt.savefig("correlation_matrix_seven_day.png", dpi=300)
+plt.close()
+
+print("\nSaved correlation matrix to:")
+print("correlation_matrix_seven_day.png")
+
+
+# CORRELATION WITH TARGET
+
+target_corr = (
+    corr_matrix["target_logret_h"]
+    .drop("target_logret_h")
+    .sort_values(key=lambda s: s.abs(), ascending=False)
+)
+
+print("\n============================================================")
+print("CORRELATION WITH TARGET: TRAIN SET")
+print("============================================================")
+print(target_corr)
+
+
+# PREPARE MATRICES
 
 X_train = train[num_cols + cat_cols]
 y_train = train["target_logret_h"]
@@ -239,18 +319,25 @@ preprocess = ColumnTransformer(
 
 results = []
 
-# BASELINES
-# Baseline 1: predict zero return
-results.append(report("baseline_zero_return", "val", y_val, np.zeros(len(val))))
-results.append(report("baseline_zero_return", "test", y_test, np.zeros(len(test))))
 
-# Baseline 2: predict 7-day future return as yesterday's one-day return
+# BASELINES
+
+train_base = np.zeros(len(train))
+val_base = np.zeros(len(val))
+test_base = np.zeros(len(test))
+
+results.append(report("baseline_zero_return", "train", y_train, train_base))
+results.append(report("baseline_zero_return", "val", y_val, val_base))
+results.append(report("baseline_zero_return", "test", y_test, test_base))
+
+results.append(report("baseline_lag1_return", "train", y_train, train["logret_lag1"]))
 results.append(report("baseline_lag1_return", "val", y_val, val["logret_lag1"]))
 results.append(report("baseline_lag1_return", "test", y_test, test["logret_lag1"]))
 
-# Baseline 3: predict 7-day future return as previous 7-day cumulative return
+results.append(report("baseline_sum7_return", "train", y_train, train["logret_sum7"]))
 results.append(report("baseline_sum7_return", "val", y_val, val["logret_sum7"]))
 results.append(report("baseline_sum7_return", "test", y_test, test["logret_sum7"]))
+
 
 # RIDGE REGRESSION
 
@@ -261,8 +348,14 @@ ridge = Pipeline(steps=[
 
 ridge.fit(X_train, y_train)
 
-results.append(report("ridge", "val", y_val, ridge.predict(X_val)))
-results.append(report("ridge", "test", y_test, ridge.predict(X_test)))
+train_pred_ridge = ridge.predict(X_train)
+val_pred_ridge = ridge.predict(X_val)
+test_pred_ridge = ridge.predict(X_test)
+
+results.append(report("ridge", "train", y_train, train_pred_ridge))
+results.append(report("ridge", "val", y_val, val_pred_ridge))
+results.append(report("ridge", "test", y_test, test_pred_ridge))
+
 
 # RANDOM FOREST
 
@@ -279,8 +372,14 @@ if RUN_RF:
 
     rf.fit(X_train, y_train)
 
-    results.append(report("random_forest", "val", y_val, rf.predict(X_val)))
-    results.append(report("random_forest", "test", y_test, test_pred_rf := rf.predict(X_test)))
+    train_pred_rf = rf.predict(X_train)
+    val_pred_rf = rf.predict(X_val)
+    test_pred_rf = rf.predict(X_test)
+
+    results.append(report("random_forest", "train", y_train, train_pred_rf))
+    results.append(report("random_forest", "val", y_val, val_pred_rf))
+    results.append(report("random_forest", "test", y_test, test_pred_rf))
+
 
 # PRINT AND SAVE RESULTS
 
@@ -297,5 +396,8 @@ print(results_df)
 
 results_df.to_csv("exact_seven_day_logret_results.csv", index=False)
 
-print("\nSaved results to: exact_seven_day_logret_results.csv")
-
+print("\n============================================================")
+print("FILES SAVED")
+print("============================================================")
+print("exact_seven_day_logret_results.csv")
+print("correlation_matrix_seven_day.png")
